@@ -346,7 +346,7 @@ and command
   
 
 let parse_cap_ident =
-  many1 (satisfy is_upper_case)
+  many1 (satisfy (fun c -> is_upper_case c || c = '_' || is_digit c))
   >|= implode
 
 let parse_const =
@@ -532,21 +532,18 @@ let rec desugar_expr (e : expr) : lexpr =
           List.fold_right (fun arg acc -> Fun (arg, acc)) args (desugar_expr exp)
       | App (exp1, exp2) -> App (desugar_expr exp1, desugar_expr exp2)
       | Let (id, args, exp1, exp2) ->
-          (* 'Let' with args is treated like a multi-argument function *)
-          let func_body = desugar_expr exp2 in
-          let nested_fun = List.fold_right (fun arg acc -> Fun (arg, acc)) args func_body in
-          App (Fun (id, nested_fun), desugar_expr exp1)
+          let func_val = List.fold_right (fun arg acc -> Fun (arg, acc)) args (desugar_expr exp1) in
+          App (Fun (id, desugar_expr exp2), func_val)
       | Ife (b, l, r) -> Ife (desugar_expr b, desugar_expr l, desugar_expr r)
       | Trace exp -> Trace (desugar_expr exp)
     
 let desugar (p : top_prog) : lexpr =
       List.fold_right (fun (id, args, expr) acc ->
           let desugared_expr = desugar_expr expr in
-          let nested_fun_body = List.fold_right (fun arg acc -> Fun (arg, acc)) args acc in
-          App (Fun (id, nested_fun_body), desugared_expr)
+          let func_val = List.fold_right (fun arg acc -> Fun (arg, acc)) args desugared_expr in
+          App (Fun (id, acc), func_val)
         ) p Unit
     
-(*Lookup X is going on the top in example-00.myml, it has to do with the stack order which means desugar is wrong*)
 let rec translate (e : lexpr) : stack_prog =
   match e with
   | App (a, b) -> translate b @ translate a @ [Call]
